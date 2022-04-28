@@ -1,714 +1,318 @@
-# TestProject Java SDK
+# Pepper-Box - Kafka Load Generator
 
-This repository contains code examples based on TestProject Java SDK.
+[![Build Status](https://travis-ci.org/GSLabDev/pepper-box.svg?branch=master)](https://travis-ci.org/GSLabDev/pepper-box) [![Coverage Status](https://coveralls.io/repos/github/GSLabDev/pepper-box/badge.svg?branch=master&maxAge=0)](https://coveralls.io/github/GSLabDev/pepper-box?branch=master)
 
-## Briefing
+___
 
-This document describes the bare minimum steps to start developing tests using the Java SDK.\
-TestProject provides a unified test automation SDK with support for Android, iOS and Web applications by utilizing the open-source Selenium and Appium frameworks.
-TestProject is OS agnostic and can run on Windows, Linux or Mac.
-It is a full stack automation framework with capabilities that allow automation test management, remote and local test execution, job scheduling, reporting dashboards, collaboration and more.
+Pepper-Box is kafka load generator plugin for jmeter. It allows to send kafka messages of type plain text(JSON, XML, CSV or any other custom format) as well as java serialized objects.
 
-## Preparations
+## Getting Started
+___
 
-To kick-off automation development with TestProject, it is necessary to have an active TestProject account and the TestProject Agent installed.\
-TestProject's Agent is a cross-platform desktop application, allowing you to create, debug and execute your test automation locally.
-TestProject Agent can be downloaded from [Agents](https://app.testproject.io/#/agents) page.
+Pepper-Box includes four main components
 
-### Getting Java SDK
+* **PepperBoxKafkaSampler** : This is jmeter java sampler sends messages to kafka.
+* **Pepper-Box PlainText Config** : This jmeter config element generates plaintext messages based on input schema template designed.
+* **Pepper-Box Serialized Config** : This jmeter config element generates serialized object messages based on input class and its property configurations.
+* **PepperBoxLoadGenerator** : This is standalone utility which can be used without jmeter.
 
-You can download TestProject SDK for Java from the [Developers](https://app.testproject.io/#/developers) page and reference it in your project.
+### Setup
+___
 
-#### Installing SDK
+#### Requirement
 
-To use TestProject SDK you have to add it as a reference to your project.\
-Here are some examples for how it should be done using Maven or Gradle.
+Pepper-Box uses Java 8 with java compiler API, hence on JMeter machine JDK 8 should be installed instead of JRE 8.
 
-Maven:
+Install openjdk on Debian, Ubuntu, etc.,
+```
+sudo apt-get install openjdk-8-jdk
+``` 
 
+Install openjdk on Fedora, Oracle Linux, Red Hat Enterprise Linux, etc.,
+```
+su -c "yum install java-1.8.0-openjdk-devel"
+``` 
+For windows you can download oracle JDK 8 setup from [here](http://www.oracle.com/technetwork/java/javase/downloads/jdk8-downloads-2133151.html)
+
+#### Build Project
+```
+mvn clean install -Djmeter.version=3.0 -Dkafka.version=0.9.0.1
+```
+JMeter and Kafka version can be passed dynamically.
+
+Once build is completed, copy jar file to JMETER_HOME/lib/ext directory.
+
+### PepperBoxKafkaSampler
+___
+
+This is java sampler hence in ThreadGroup add sampler as Java Request and select class as com.gslab.pepper.sampler.PepperBoxKafkaSampler
+
+![PepperBoxKafkaSampler](jmeter_sampler.png)
+
+As you can see in above screen, you can configure producer properties and topic details.
+
+* **bootstrap.servers** : broker-ip-1:port, broker-ip-2:port, broker-ip-3:port
+* **zookeeper.servers** : zookeeper-ip-1:port, zookeeper-ip-2:port, zookeeper-ip-3:port. **Note** : Any one of bootstrap or zookeeper server detail is enough. if zookeeper servers are given then bootstrap.servers are retrieved dynamically from zookeeper servers.
+* **kafka.topic.name** : Topic on which messages will be sent
+* **key.serializer** : Key serializer (This is optional and can be kept as it is as we are not sending keyed messages).
+* **value.serializer** : For plaintext config element value can be kept same as default but for serialized config element, value serializer can be "com.gslab.pepper.input.serialized.ObjectSerializer"
+* **compression.type** : kafka producer compression type(none/gzip/snappy/lz4)
+* **batch.size** : messages batch size(increased batch size with compression like lz4 gives better throughput)
+* **linger.ms** : How much maximum time producer should wait till batch becomes full(should be 5-10 when increased batch size and compression is enabled)
+* **buffer.memory** : Total buffer memory for producer.
+* **acks** : Message sent acknowledgement, value can be (0/1/-1).
+* **send.buffer.bytes** : The size of the TCP send buffer (SO_SNDBUF) to use when sending data. If the value is -1, the OS default will be used.
+* **receive.buffer.bytes** : The size of the TCP receive buffer (SO_RCVBUF) to use when reading data. If the value is -1, the OS default will be used.
+* **security.protocol** : kafka producer protocol. Valid values are: PLAINTEXT, SSL, SASL_PLAINTEXT, SASL_SSL.
+* **message.placeholder.key** : Config element message variable name. This name should be same as message placeholder key in serialized/plaintext config element.
+* **kerberos.auth.enabled** : YES/NO if it is disabled all below properties will be ignored
+* **java.security.auth.login.config** : jaas.conf of kafka Kerberos
+* **java.security.krb5.conf** : Kerberos server krb5.conf file
+* **sasl.kerberos.service.name** : Kafka Kerberos service name
+
+Above properties are added by default in sampler as those are more significant in terms of performance in most of the cases. But you can add other non listed kafka properties with prefix "_".
+
+For example to enable SSL properties you can add below properties
+
+```
+_ssl.key.password
+_ssl.keystore.location
+_ssl.keystore.password
+_ssl.keystore.type
+_ssl.truststore.location
+_ssl.truststore.password
+_ssl.truststore.type
+
+```
+***Note:*** These are just sample properties, SSL properties are already included in kafka sampler.
+
+### Pepper-Box PlainText Config
+___
+
+Pepper-Box PlainText Config is jmeter config element. It takes schema template is input and generates message for each sampler request.
+
+![Pepper-Box PlainText Config](plaintext_config_element.png)
+
+You can add this config element using Thread group --> Add --> Config Element --> Pepper-Box PlainText Config
+
+Input schema template can be in any format
+
+**JSON schema template**
+```
+{
+	"messageId":{{SEQUENCE("messageId", 1, 1)}},
+	"messageBody":"{{RANDOM_ALPHA_NUMERIC("abcedefghijklmnopqrwxyzABCDEFGHIJKLMNOPQRWXYZ", 100)}}",
+	"messageCategory":"{{RANDOM_STRING("Finance", "Insurance", "Healthcare", "Shares")}}",
+	"messageStatus":"{{RANDOM_STRING("Accepted","Pending","Processing","Rejected")}}",
+	"messageTime":{{TIMESTAMP()}}
+}
+```
+
+**XML schema template**
 ```xml
-<dependency>
-    <groupId>io.testproject</groupId>
-    <artifactId>java-sdk</artifactId>
-    <version>1.0</version>
-    <systemPath>/path/to/sdk/io.testproject.sdk.java.jar</systemPath>
-    <scope>system</scope>
-</dependency>
+<message>
+	<messageId>{{SEQUENCE("messageId", 1, 1)}}</messageId>
+	<messageBody>{{RANDOM_ALPHA_NUMERIC("abcedefghijklmnopqrwxyzABCDEFGHIJKLMNOPQRWXYZ", 100)}}</messageBody>
+	<messageCategory>{{RANDOM_STRING("Finance", "Insurance", "Healthcare", "Shares")}}</messageCategory>
+	<messageStatus>{{RANDOM_STRING("Accepted","Pending","Processing","Rejected")}}</messageStatus>
+	<messageTime>{{TIMESTAMP()}}</messageTime>
+</message>
+```
+**Custom schema template**
+
+```
+Hello {{FIRST_NAME()}}
+
+	This is sample message sending at {{DATE("dd/MM/yyyy HH:mm:ss")}}.
+
+Thanks and Regards,
+{{FIRST_NAME()}} {{LAST_NAME()}}
+
 ```
 
-Gradle:
+### Pepper-Box Serialized Config
+___
 
-```groovy
- compile files("/path/to/sdk/io.testproject.sdk.java.jar")
-```
+Java serialized objects can be sent to kafka using Pepper-Box Serialized Config Element. This config element can be added using Thread group --> Add --> Config Element --> Pepper-Box Serialized Config
 
-Refer to _pom.xml_ and _build.gradle_ files in the provided examples for more details.
+![Pepper-Box PlainText Config](serialized_config_element.png)
 
-## Test Development
+Follow below steps to use this config element,
 
-The best way to start developing automated tests with TestProject is by reviewing the source code of a basic test that performs a login and updates a profile form, expecting the save to succeed.
+* Enter fully qualified name in `class name` section (e.g. com.gslab.pepper.Message in above screen). This class should be present in jmeter classpath folder(lib or lib/ext). You can copy jar containing required class to JMETER_HOME/lib/ext folder.
+* Click on load button which will populate all fields of given class with default values as `Ignore` means field value will not set.
+* Assign function expression to each field.
 
-* [Web](Web/Test/src/main/java/io/testproject/examples/sdk/tests/BasicTest.java) test executed on [TestProject Demo](https://example.testproject.io/web/index.html) website.
-* [Android](Android/Test/src/main/java/io/testproject/examples/sdk/tests/BasicTest.java) test executed on [TestProject Demo](https://github.com/testproject-io/android-demo-app) App for Android.
-* [iOS](iOS/Test/src/main/java/io/testproject/examples/sdk/tests/BasicTest.java) test executed on [TestProject Demo](https://github.com/testproject-io/ios-demo-app) App for iOS.
-
-There is also a [Generic](Generic/Test/src/main/java/io/testproject/examples/sdk/tests/BasicTest.java) test, representing  a dummy scenario that can be automated.\
-It can be used as a reference for real scenarios that automate a non-UI sequences (those that do not require a Selenium or Appium driver).
-
-### Test Class
-
-In order to build a Test that can be executed by TestProject, the class has to implement on of the interfaces that the SDK provides.\
-Interface implementation requires an implementation of the *execute()* method, that will be be invoked by the platform to run the Test.\
-The *execute()* method returns *ExecutionResult* enum which can be **PASSED** or **FAILED**.
-
-Below are some examples for Test implementation on different platforms:
-
-<details><summary>Web Test</summary>
-<p>
-
-BasicTest class implements the *WebTest* interface:
+Example Class,
 
 ```java
-public class BasicTest implements WebTest
-```
-
-Test entry point is the *execute* method:
-
-```java
-public ExecutionResult execute(WebTestHelper helper) throws FailureException
-```
-
-The following line of code retrieves a driver to automate the browser.
-
-```java
-// Get driver initialized by TestProject Agent
-// No need to specify browser type, it can be done later via UI
-WebDriver driver = helper.getDriver();
-```
-
-Following code is used to navigate the browser to the relevant URL.
-After it is executed, TestProject Demo page is loaded.
-
-```java
-// Navigate to TestProject Demo website
-driver.navigate().to("https://example.testproject.io/web/");
-```
-
-The following code uses the Page Object Model pattern to login in and complete a profile form, saving it:
-
-```java
-// Login using provided credentials
-LoginPage loginPage = PageFactory.initElements(driver, LoginPage.class);
-loginPage.login(name, password);
-
-// Complete profile forms and save it
-ProfilePage profilePage = PageFactory.initElements(driver, ProfilePage.class);
-profilePage.updateProfile(country, address, email, phone);
-```
-
-The following return statement will assert test result:
-
-```java
-return profilePage.isSaved() ? ExecutionResult.PASSED : ExecutionResult.FAILED;
-```
-
-</p>
-</details>
-
-<details><summary>Android Test</summary>
-<p>
-
-BasicTest class implements the *AndroidTest* interface:
-
-```java
-public class BasicTest implements AndroidTest
-```
-
-Test entry point is the *execute* method:
-
-```java
-public ExecutionResult execute(AndroidTestHelper helper) throws FailureException
-```
-
-The following line of code retrieves a driver to automate the App.
-
-```java
-// Get driver initialized by TestProject Agent
-AndroidDriver driver = helper.getDriver();
-```
-
-The following code resets the App and uses the Page Object Model pattern to login in and complete a profile form, saving it:
-
-```java
- driver.resetApp();
-
-LoginPage loginPage = new LoginPage(driver);
-loginPage.login(name, password);
-
-ProfilePage profilePage = new ProfilePage(driver);
-profilePage.updateProfile(country, address, email, phone);
-```
-
-The following return statement will assert test result:
-
-```java
-return profilePage.isSaved() ? ExecutionResult.PASSED : ExecutionResult.FAILED;
-```
-
-</p>
-</details>
-
-<details><summary>iOS Test</summary>
-<p>
-
-BasicTest class implements the *IOSTest* interface:
-
-```java
-public class BasicTest implements IOSTest
-```
-
-Test entry point is the *execute* method:
-
-```java
-public ExecutionResult execute(IOSTestHelper helper) throws FailureException
-```
-
-The following line of code retrieves a driver to automate the App.
-
-```java
-// Get driver initialized by TestProject Agent
-IOSDriver driver = helper.getDriver();
-```
-
-The following code resets the App and uses the Page Object Model pattern to login in and complete a profile form, saving it:
-
-```java
- driver.resetApp();
-
-LoginPage loginPage = new LoginPage(driver);
-loginPage.login(name, password);
-
-ProfilePage profilePage = new ProfilePage(driver);
-profilePage.updateProfile(country, address, email, phone);
-```
-
-The following return statement will assert test result:
-
-```java
-return profilePage.isSaved() ? ExecutionResult.PASSED : ExecutionResult.FAILED;
-```
-
-</p>
-</details>
-
-<details><summary>Generic Test</summary>
-<p>
-
-BasicTest class implements the *GenericTest* interface:
-
-```java
-public class BasicTest implements GenericTest
-```
-
-Test entry point is the *execute* method:
-
-```java
-public ExecutionResult execute(TestHelper helper) throws FailureException
-```
-
-The following code adds the value stored in 'a' variable to the value in 'b' and if equals 2, asserts success:
-
-```java
-int a = 1, b = 1;
-
-if (a + b == 2) {
-    return ExecutionResult.PASSED;
-} else {
-    return ExecutionResult.FAILED;
-}
-```
-
-</p>
-</details>
-
-### Debugging / Running Test
-
-To debug or run the test locally, you will have to use the *Runner* class from TestProject SDK.
-All code examples, have JUnit tests that use *Runner* to debug the automation locally.
-Debugging or running a test locally with the *Runner* class, requires authentication before communication with the TestProject Agent (since it is the execution engine).
-Development token for authentication can be easily obtained from the [Developers](https://app.testproject.io/#/developers) page.
-It should be used as a parameter in one of the *Runner* factory methods:
-
-<details><summary>Web</summary>
-<p>
-
-```java
-Runner runner = Runner.createWeb("YOUR_DEV_TOKEN", ...
-```
-
-</p>
-</details>
-
-<details><summary>Android</summary>
-<p>
-
-```java
-Runner runner = Runner.createAndroid("YOUR_DEV_TOKEN", ...
-```
-
-</p>
-</details>
-
-<details><summary>Chrome on Android</summary>
-<p>
-
-```java
-Runner runner = Runner.createAndroidWeb("YOUR_DEV_TOKEN", ...
-```
-
-</p>
-</details>
-
-<details><summary>iOS</summary>
-<p>
-
-```java
-Runner runner = Runner.createIOS("YOUR_DEV_TOKEN", ...
-```
-
-</p>
-</details>
-
-<details><summary>Safari on iOS</summary>
-<p>
-
-```java
-Runner runner = Runner.createIOSWeb("YOUR_DEV_TOKEN", ...
-```
-
-</p>
-</details>
-
-<details><summary>Generic</summary>
-<p>
-
-```java
-Runner runner = Runner.create("YOUR_DEV_TOKEN"...
-```
-
-</p>
-</details>
-
-### Using parameters and step reports in your tests
-
-Let's make our example more advanced by adding parameters. To add parameters to your test, you simply need to add fields with relevant annotations.\
-In addition, we will create step reports to separate the different stages of the test (each report will appear as a separate step in the future execution reports).
-
-See the relevant platform link for full source code:
-
-* [Web - Extended Test](Web/Test/src/main/java/io/testproject/examples/sdk/tests/ExtendedTest.java)
-* [Android - Extended Test](Android/Test/src/main/java/io/testproject/examples/sdk/tests/ExtendedTest.java)
-* [iOS - Extended Test](iOS/Test/src/main/java/io/testproject/examples/sdk/tests/ExtendedTest.java)
-* [Generic - Extended Test](Generic/Test/src/main/java/io/testproject/examples/sdk/tests/ExtendedTest.java)
-
-#### Test Annotations
-
-TestProject SDK provides annotations to describe the test and its parameters:
-
- 1. The ***Test*** annotation is used to better describe the Test and define how it will appear later in TestProject UI:
-    * **name** - The name of the test (if omitted, the name of the class will be used).
-    * **description** - A description of the test which is shown in various places in TestProject platform (e.g. reporting dashboard). The description may contain placeholders {{propertyName}} that will be changed dynamically according to test parameters.
-    * **version** - A version string which is used for future reference.
- 1. The ***Parameter*** annotation is used to better describe your Test inputs and outputs, in the example above there are two inputs - *url* and *expectedTitle*.
-    * **description** - The description of the parameter
-    * **direction** - Defines the parameter as an *input* (default if omitted) or an *output* parameter. An *input* parameter will receive values when the test is executed while the *output* parameter value will be retrieved at the end of test execution (and can be used in following steps later on in the automation scenario).
-    * **defaultValue** - Defines a default value that will be used for the parameter.
-
-#### Reports
-
-Implemented *execute()* method receives a _Helper_ instance as a parameter.\
-Via this helper, you can obtain an instance of _TestReporter_ class.
-
-```java
-TestReporter report = helper.getReporter();
-```
-
-Notice the following line in the Extended Test example.\
-This line reports a step based on provided condition and takes a screenshot:
-
-```java
-report.step("Profile information saved", profilePage.isSaved(), TakeScreenshotConditionType.Always);
-```
-
-Using the following code one can set test result message:
-
-```java
-report.result("Test completed successfully");
-```
-
-
-
-## Addon development
-
-Much like Tests you can develop custom Addons to extend TestProject and shape your automated testing solution for your needs.\
-An Addon is a set of Actions (one or more) where each Action does a specific task, a common Addon scenario will be to extend basic set of Actions on complicated UI elements or make wrappers for user defined API.\
-Once created, Actions can be used to design steps of automated tests.
-
-### Addon Manifest
-
-To start developing an Addon a manifest file is required. The manifest is a descriptor of your Addon, it contains a unique GUID for the addon and a list of required permissions.\
-Create an Addon in the [Addons](https://app.testproject.io/#/addons/account) screen and download the generated manifest, placing it in your project resources folder.
-
-### Implement the Addon
-
-Lets review a simple Addon with a **ClearFields** action that clears a form.
-It can be used on the login form in TestProject Demo website or mobile App:
-
-* [Web - Action](Web/Addon/src/main/java/io/testproject/examples/sdk/actions/ClearFieldsAction.java)
-* [Android - Action](Android/Addon/src/main/java/io/testproject/examples/sdk/actions/ClearFieldsAction.java)
-* [iOS - Action](iOS/Addon/src/main/java/io/testproject/examples/sdk/actions/ClearFieldsAction.java)
-
-There is also a [Generic](Generic/Addon/src/main/java/io/testproject/examples/sdk/actions/AdditionAction.java) action, representing  a dummy scenario that can be automated.\
-It can be used as a reference for real scenarios that automate a non-UI (those hat do not require a Selenium or Appium driver) actions.
-
-#### Action Class
-
-In order to build an Action that can be executed by TestProject, the class has to implement one of the interfaces that the SDK provides.\
-Action class can also be decorated with the *@Action* annotation to provide extra information about the action.
-
-Interface implementation requires an implementation of the *execute()* method, that will be be invoked by the platform to run the Action.\
-The *execute()* method returns *ExecutionResult* enum which can be **PASSED** or **FAILED**.
-
-<details><summary>Web Action</summary>
-<p>
-
-ClearFields class implements the *WebAction* interface:
-
-```java
-@Action(name = "Clear Fields")
-public class ClearFields implements WebAction
-```
-
-Action entry point is the *execute* method:
-
-```java
-public ExecutionResult execute(WebAddonHelper helper) throws FailureException
-```
-
-Action code searches for visible Forms and then for contained inputs elements, clearing them one by one:
-
-```java
-// Get Driver
-WebDriver driver = helper.getDriver();
-
-// Search for Form elements
-for (WebElement form : driver.findElements(By.tagName("form"))) {
-
-    // Ignore invisible forms
-    if (!form.isDisplayed()) {
-        continue;
+package com.gslab.pepper;
+import java.io.Serializable;
+public class Message  implements Serializable{
+
+    private long messageId;
+    private String messageBody;
+    private String messageStatus;
+    private String messageCategory;
+    private long messageTime;
+
+    public long getMessageId() {
+        return messageId;
     }
 
-    // Clear all inputs
-    for (WebElement element : form.findElements(By.tagName("input"))) {
-        element.clear();
+    public void setMessageId(long messageId) {
+        this.messageId = messageId;
+    }
+
+    public String getMessageBody() {
+        return messageBody;
+    }
+
+    public void setMessageBody(String messageBody) {
+        this.messageBody = messageBody;
+    }
+
+    public String getMessageStatus() {
+        return messageStatus;
+    }
+
+    public void setMessageStatus(String messageStatus) {
+        this.messageStatus = messageStatus;
+    }
+
+    public String getMessageCategory() {
+        return messageCategory;
+    }
+
+    public void setMessageCategory(String messageCategory) {
+        this.messageCategory = messageCategory;
+    }
+
+    public long getMessageTime() {
+        return messageTime;
+    }
+
+    public void setMessageTime(long messageTime) {
+        this.messageTime = messageTime;
     }
 }
+
 ```
 
-</p>
-</details>
+**Please make sure that function return type and field data type should be compatible with each other.**
 
-<details><summary>Android Action</summary>
-<p>
+### PepperBoxLoadGenerator
 
-ClearFields class implements the *AndroidAction* interface:
+PepperBoxLoadGenerator is console plaintext load generation utility.
 
-```java
-@Action(name = "Clear Fields")
-public class ClearFields implements AndroidAction
+Command,
+
 ```
-
-Action entry point is the *execute* method:
-
-```java
-public ExecutionResult execute(AndroidAddonHelper helper) throws FailureException
+java -cp pepper-box-1.0.jar  com.gslab.pepper.PepperBoxLoadGenerator --schema-file <schema file absolute path> --producer-config-file <producer properties absoulte path>  --throughput-per-producer <throughput rate per producer> --test-duration <test duration in seconds> --num-producers <number of producers>
 ```
+Example
 
-Action code searches for EditText elements, clearing them one by one:
+* Schema file
 
-```java
-for (AndroidElement element : helper.getDriver().findElements(By.className("android.widget.EditText"))) {
-    element.clear();
+```
+{
+	"messageId":{{SEQUENCE("messageId", 1, 1)}},
+	"messageBody":"{{RANDOM_ALPHA_NUMERIC("abcedefghijklmnopqrwxyzABCDEFGHIJKLMNOPQRWXYZ", 100)}}",
+	"messageCategory":"{{RANDOM_STRING("Finance", "Insurance", "Healthcare", "Shares")}}",
+	"messageStatus":"{{RANDOM_STRING("Accepted","Pending","Processing","Rejected")}}",
+	"messageTime":{{TIMESTAMP()}}
 }
 ```
+* producer properties file
 
-</p>
-</details>
+```
+bootstrap.servers=<Broker List>
+zookeeper.servers=<Zookeeper List>
+kafka.topic.name=<kafka topic>
+key.serializer=org.apache.kafka.common.serialization.StringSerializer
+value.serializer=org.apache.kafka.common.serialization.StringSerializer
+acks=0
+send.buffer.bytes=131072
+receive.buffer.bytes=32768
+batch.size=16384
+linger.ms=0
+buffer.memory=33554432
+compression.type=none
+security.protocol=PLAINTEXT
+kerberos.auth.enabled=NO
+java.security.auth.login.config=<JAAS File Location>
+java.security.krb5.conf=<krb5.conf location>
+sasl.kerberos.service.name=<Kerberos service name>
+```
+For schema file and producer properties file most of the features same as jmeter plain text config element.
 
-<details><summary>iOS Action</summary>
-<p>
+**We have also included ```pepper_box.jmx``` jmeter sample test file which can be directly imported in jmeter.**
 
-ClearFields class implements the *IOSAction* interface:
+### Schema Template Functions
+___
+
+Pepper-Box provides various template functions for random data generation,
+
+| Function | Details | Example(For serialized use without `{{ }}`) | Returns |
+|----------|:-------:|:--------:|:--------:|
+|TIMESTAMP()|current time in long|```{{TIMESTAMP()}}```|Long|
+|TIMESTAMP(startDate, endDate)|Random long date between two Dates|```{{TIMESTAMP("01-05-1998 10:30:12","03-03-2017 12:12:12")}}```|Long|
+|DATE(format)|current date with given format |```{{DATE("dd-MM-yyyy HH:mm:ss")}}```|String|
+|RANDOM_STRING(string1, string2, string3,...)|Random string among given|```{{RANDOM_STRING("ONE","TWO","THREE","FOUR")}}```|String|
+|RANDOM_INT(int1, int2, int3,...)|Random integer among given|```{{RANDOM_INT(1, 2, 3, 4)}}```|Integer|
+|RANDOM_FLOAT(float1, float2, float3,...)|Random float among given|```{{RANDOM_FLOAT(1.1F ,2.1F, 3.1F, 4.1F)}}```|Float|
+|RANDOM_DOUBLE(double1, double2, double3,...)|Random double among given|```{{RANDOM_DOUBLE(1.1, 2.1, 3.1, 4.1)}}```|Double|
+|RANDOM_LONG(long1, long2, long3,...)|Random long among given|```{{RANDOM_LONG(1, 2, 3, 4)}}```|Long|
+|RANDOM_INT_RANGE(min, max)|Random integer among given|```{{RANDOM_INT_RANGE(1,100)}}```|Integer|
+|RANDOM_FLOAT_RANGE(min, max)|Random float between min and max|```{{RANDOM_FLOAT_RANGE(1.0F, 100.0F)}}```|Float|
+|RANDOM_FLOAT_RANGE(min, max)|Random double between min and max|```{{RANDOM_FLOAT_RANGE(1.0, 100.0)}}```|Double|
+|RANDOM_LONG_RANGE(min, max)|Random long between min and max|```{{RANDOM_LONG_RANGE(1,100)}}```|Long|
+|FIRST_NAME()|Random first name|```{{FIRST_NAME()}}```|String|
+|LAST_NAME()|Random last name|```{{LAST_NAME()}}```|String|
+|RANDOM_ALPHA_NUMERIC(charSet, length)|Random string of given length from given char set|```{{RANDOM_ALPHA_NUMERIC("abcdefghijklmn", 10)}}```|String|
+|UUID()|Random UUID|```{{UUID()}}```|String|
+|SEQUENCE(sequenceId, startValue, incrementBy)|Generates incremental sequence|```{{SEQUENCE("messageId", 1, 1)}}```|Long|
+|PHONE()|Random 10 digit phone number|```{{PHONE()}}```|String|
+|GENDER()|Random gender|```{{GENDER()}}```|String|
+|BOOLEAN()|Random boolean|```{{BOOLEAN()}}```|boolean|
+|EMAIL(domain)|Random email id for given domain|```{{EMAIL("test.com")}}```|String|
+|USERNAME()|Random username|```{{USERNAME()}}```|String|
+|IPV4()|Random IPV4 address|```{{IPV4()}}```|String|
+|IPV6()|Random IPV6 address|```{{IPV6()}}```|String|
+
+### Custom Functions
+Apart from these functions, you can also add your own custom function in `com.gslab.pepper.input.CustomFunctions` class. Please make sure that those are static functions.
+
+Example
 
 ```java
-@Action(name = "Clear Fields")
-public class ClearFields implements IOSAction
+
+public static float AVG(float... floats){
+        int count = floats.length;
+        float sum = 0.0;
+        for (float number : floats){
+            sum += number;
+        }
+        return sum/count;
+    }
+
+```
+AVG function can be used in schema as shown below,
+
+```{{AVG(32.2, 34.5, 64.2)}}```
+
+**Note:** While writing custom functions, please try to keep data in memory or scale your function as much other functions otherwise your custom function itself becomes performance bottlneck. e.g. you need some record ids from RDBMS for some schema fields, instead of querying every time bring all ids inmemory and get random id from those ids.
+
+You can also add manipulations on template functions, for example TIMESTAMP() function returns time in milliseconds but you can get time in seconds,
+
+```
+{{java.util.concurrent.TimeUnit.MILLISECONDS.toSeconds(TIMESTAMP())}}
+
 ```
 
-Action entry point is the *execute* method:
+## Special Thanks!
 
-```java
-public ExecutionResult execute(IOSAddonHelper helper) throws FailureException
-```
+* We would like to special thanks to [kafkameter
+](https://github.com/BrightTag/kafkameter) and [wrtting custom jmeter plugin](http://codyaray.com/2014/07/custom-jmeter-samplers-and-config-elements) blogpost which helped to understand writing custom plugins for JMeter.
 
-Action code searches for XCUIElementTypeTextField and XCUIElementTypeSecureTextField elements, clearing them one by one:
-
-```java
-for (IOSElement element : helper.getDriver().findElements(By.className("XCUIElementTypeTextField"))) {
-    element.clear();
-}
-
-for (IOSElement element : helper.getDriver().findElements(By.className("XCUIElementTypeSecureTextField"))) {
-    element.clear();
-}
-```
-
-</p>
-</details>
-
-<details><summary>Generic Action</summary>
-<p>
-
-Addition class implements the *GenericAction* interface:
-
-```java
-@Action(name = "Addition", description = "Add {{a}} to {{b}}")
-public class Addition implements GenericAction
-```
-
-Action entry point is the *execute* method:
-
-```java
-public ExecutionResult execute(AddonHelper helper) throws FailureException
-```
-
-Action code performs an addition of values in two variables, assigning result to third:
-
-```java
-this.result = a + b;
-```
-
-</p>
-</details>
-
-
-Actions run in context of a test and assume that required UI state is already in place.\
-When the action will be used in a test it will be represented as a single step, usually preceded by other steps.\
-However, when debugging it locally, preparations should be done using the *Runner* class to start from expected UI state:
-
-<details><summary>Web - State Preparation</summary>
-<p>
-
-```java
-// Create Action
-ClearFields action = new ClearFields();
-
-// Prepare state
-WebDriver driver = runner.getDriver();
-driver.navigate().to("https://example.testproject.io/web/");
-driver.findElement(By.id("name")).sendKeys("John Smith");
-driver.findElement(By.id("password")).sendKeys("12345");
-
-// Run action
-runner.run(action);
-```
-
-</p>
-</details>
-
-<details><summary>Android - State Preparation</summary>
-<p>
-
-```java
-// Create Action
-ClearFields action = new ClearFields();
-
-// Prepare state
-AndroidDriver driver = runner.getDriver();
-driver.findElement(By.id("name")).sendKeys("John Smith");
-driver.findElement(By.id("password")).sendKeys("12345");
-
-// Run action
-runner.run(action);
-```
-
-</p>
-</details>
-
-<details><summary>iOS - State Preparation</summary>
-<p>
-
-```java
-// Create Action
-ClearFields action = new ClearFields();
-
-// Prepare state
-IOSDriver driver = runner.getDriver();
-driver.findElement(By.id("name")).sendKeys("John Smith");
-driver.findElement(By.id("password")).sendKeys("12345");
-
-// Run action
-runner.run(action);
-```
-
-</p>
-</details>
-
-#### Action Annotations
-
-TestProject SDK provides annotations to describe the action:
-
- 1. The ***Action*** annotation is used to better describe your action and define how it will appear later in TestProject UI:
-    * **name** - The name of the action (if omitted, the name of the class will be used).
-    * **description** - A description of the test which is shown in various places in TestProject platform (reports for example). The description can use placeholders {{propertyName}} do dynamically change the text according to test properties.
-    * **version** - A version string which is used for future reference.
- 1. The ***Parameter*** annotation is used to better describe your action's inputs and outputs, in the example above there are two parameters - *question* and *answer*.
-    * **description** - The description of the parameter
-    * **direction** - Defines the parameter as an *input* (default if omitted) or an *output* parameter. An *input* parameter will able to receive values when it is being executed while the *output* parameter value will be retrieved at the end of test execution (and can be used in other places later on in the automation scenario).
-    * **defaultValue** - Defines a default value that will be used for the parameter.
-
-> NOTE: Unlike tests, actions cannot use assertions because an action is a single generic reusable unit.
-
-### Debugging / Running Actions
-
-To debug or run the action locally, you will have to use the *Runner* class from TestProject SDK.
-All code examples, have JUnit tests that use *Runner* to debug the automation locally.
-
-### Element Actions
-
-Actions can be element based, when their scope is limited to operations on a specific element and not the whole DOM.\
-This allows creating smart crowd based addons for industry common elements and libraries.
-
-*TypeRandomPhone* is an example of an Element Action:
-
-* [Web - Element Action](Web/Addon/src/main/java/io/testproject/examples/sdk/actions/TypeRandomPhoneAction.java)
-* [Android - Element Action](Android/Addon/src/main/java/io/testproject/examples/sdk/actions/TypeRandomPhoneAction.java)
-* [iOS - Element Action](iOS/Addon/src/main/java/io/testproject/examples/sdk/actions/TypeRandomPhoneAction.java)
-
-This action generates a random phone number based on provided country code and max digits amount, typing it in a text field:
-
-```java
-long number = (long) (Math.random() * Math.pow(10, maxDigits));
-phone = String.format("+%s%s", countryCode, number);
-element.sendKeys(phone);
-return ExecutionResult.PASSED;
-```
-
-It also stores the result in an output field (see the annotation and ***ParameterDirection.OUTPUT*** configuration) for further use later in test.\
-When the action is debugged using a Runner, via JUnit test, it's important to pass the element search criteria into the action:
-
-```java
-runner.run(action, By.id("phone"));
-```
-
-After the Addon is uploaded to TestProject platform this will be done via UI.
-
-#### Element Type
-
-Element Actions are made to be used on a specific Element Types.
-Element Types are defined in TestProject using XPath to describe target elements similarities:
-
-<details><summary>Web - Element Type</summary>
-<p>
-
-It can be a simple definitions such as:
-
-```java
-//div
-```
-
-Or a more complex one, such as:
-
-```java
-//div[contains(@class, 'progressbar') and contains(@class, 'widget') and @role = 'progressbar']
-```
-
-</p></details>
-
-<details><summary>Android - Element Type</summary>
-<p>
-
-It can be a simple definitions such as:
-
-```java
-//android.widget.Button
-```
-
-Or a more complex one, such as:
-
-```java
-//android.support.v7.widget.RecyclerView[contains(@resource-id, 'my_view') and .//android.widget.TextView[not(contains(@resource-id, 'average_value'))]]
-```
-
-</p></details>
-
-<details><summary>iOS - Element Type</summary>
-<p>
-
-It can be a simple definitions such as:
-
-```java
-//XCUIElementTypeButton
-```
-
-Or a more complex one, such as:
-
-```java
-//XCUIElementTypeSearchField[contains(@label = 'Categories')]
-```
-
-</p></details>
-
-It is up to the Action developer how to narrow and limit the list of element types that the action developed will be applicable to.
-
-## Crowd Code / Addon Proxy
-
-One of the greatest features of the TestProject environment is the ability to execute a code written by someone else.\
-It can be your account colleagues writing actions that you can reuse, or TestProject community users.\
-Developer must download a binary file with the proxy class for the Action he wants to execute.
-
-Assuming your account member uploaded the example Addon, named it ***Example*** and you want to reuse it's code your Test.\
-To do so, you can download it's proxy JAR and use it like this:
-
-```java
-ClearFields clearFieldsAction = ExampleAddon.clearFields();
-```
-
-Implemented *execute()* method receives a _Helper_ instance as a parameter.\
-Via this helper, you can execute the proxy by invoking the ***executeProxy*** method:
-
-```java
-StepExecutionResult result = helper.executeProxy(clearFieldsAction);
-```
-
-See examples:
-
-* [Web - Proxy Test](Web/Test/src/main/java/io/testproject/examples/sdk/tests/ProxyTest.java)
-* [Android - Proxy Test](Android/Test/src/main/java/io/testproject/examples/sdk/tests/ProxyTest.java)
-* [iOS - Proxy Test](iOS/Test/src/main/java/io/testproject/examples/sdk/tests/ProxyTest.java)
-* [Generic - Proxy Test](Generic/Test/src/main/java/io/testproject/examples/sdk/tests/ProxyTest.java)
-
-## Packaging
-
-In order to upload your Addons or Tests to TestProject, you have to package it as JAR file.\
-Export your code as an uber JAR file with dependencies, excluding TestProject SDK.
-
-See *build.gradle* or *pom.xml* files in code examples for details.
-
-## Support
-
-For any further inquiries, please use TestProject support channels:
-
-* [Forum](https://forum.testproject.io/index.php/board,11.0.html)
-* [Help Desk](https://support.testproject.io/)
+* We also like to thanks to [InMemoryJavaCompiler](https://github.com/trung/InMemoryJavaCompiler) which helped to understand in memory code compilation.
